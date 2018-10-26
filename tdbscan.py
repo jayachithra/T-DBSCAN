@@ -1,61 +1,60 @@
 """
 T-DBSCAN
 Author: Jaya
+Source: Paper titled "T-DBSCAN: A Spatiotemporal Density Clustering for GPS Trajectory Segmentation"
 """
 
-import math
-from datetime import timedelta
 from geopy.distance import great_circle
 """
 INPUTS:
     df={o1,o2,...,on} Set of objects
-    spatial_threshold = Maximum geographical coordinate (spatial) distance value
-    temporal_threshold = Maximum non-spatial distance value
-    min_neighbors = Minimun number of points within Eps1 and Eps2 distance
+    CEps = Outer radius for density calculation
+    Eps = Inner radius defining the density calculation are
+    MinPts = Minimun number of points in neighborhood
 OUTPUT:
-    C = {c1,c2,...,ck} Set of clusters
+    df = Updated dataframe with annotated clusters
 """
+
 def T_DBSCAN(df, CEps,Eps, MinPts):
     
     C = 0
     Cp = {}
     UNMARKED = 777777
-    VISITED = 1
+    
     
     df['cluster'] = UNMARKED
-    df['visited'] = UNMARKED
+    df['visited'] = 'Not visited'
     MaxId = -1    
         
-    for index, P in df.iterrows():
-        if index > MaxId:
-            df.set_value(index, 'visited', VISITED)
+    for index, P in df.iterrows():        
+        if index > MaxId:           
             
+            df.set_value(index, 'visited', 'visited')            
             #search for continuous density-based neighbours N
             N = getNeighbors(P, CEps, Eps, df, index)
-            MaxId = index
-            
-            if len(N) > MinPts: #new cluster
-                C = C + 1
-                
-            # assign a label to core point
-            (Ctemp, MaxId) = expandCluster(P, N, CEps, Eps, MinPts, MaxId, df) #expand the cluster
-            
+            MaxId = index            
+            #create new cluster
+            if len(N) > MinPts: 
+                C = C + 1                
+            #expand the cluster
+            Ctemp, MaxId = expandCluster(P, N, CEps, Eps, MinPts, MaxId, df, index)            
             if C in Cp:
-                Cp[C] = Cp[C] + Ctemp
+                Cp[C] = Cp[C] + Ctemp                             
             else:
                 Cp[C] = Ctemp
-            
-            Cp = mergeClusters(Cp)  #merge clusters
-
-                    
-    return Cp
+                
+    print("Clusters identified...")         
+    Cp = mergeClusters(Cp) #merge clusters      
+    df = updateClusters(df, Cp)  #update df     
+       
+    return df
 
 
 # Retrieve neighbors
 def getNeighbors(P, CEps, Eps, df, p_index):
     
     neighborhood = []
-    center_point = df.loc[p_index]
+    center_point = P
     
     for index, point in df.iterrows():
         if index > p_index:
@@ -64,119 +63,58 @@ def getNeighbors(P, CEps, Eps, df, p_index):
                 neighborhood.append(index)
             elif distance > CEps:
                  break
+             
     return neighborhood
         
  
     
 #cluster expanding
-def expandCluster(P, N, CEps, Eps, MinPts, MaxId, df):
+def expandCluster(P, N, CEps, Eps, MinPts, MaxId, df, p_index):
     
     Cp = []
     N2 = []
     
-    Cp.append(P)
+    Cp.append(p_index)
     
-    for index, point in N:
-        df.loc[index]['visited'] = 'visited'
+    for index in N:
+        point = df.loc[index]
+        df.loc[index]['visited'] = 1
         if index > MaxId:
-            MaxId = index
-        
-        #find neighbors of neighbors of core point P
-        N2 = getNeighbors(point, CEps, Eps, df, index)    
-        if len(N2) >= MinPts:
-            #classify the points into current cluster based on definitions 3,4,5
+            MaxId = index     
+        N2 = getNeighbors(point, CEps, Eps, df, index) #find neighbors of neighbors of core point P   
+        if len(N2) >= MinPts: #classify the points into current cluster based on definitions 3,4,5            
             N = N + N2
-        
-        if point not in Cp:
-            Cp.append(point)
+        if index not in Cp:
+            Cp.append(index)
             
-        return Cp, MaxId
+    return Cp, MaxId
             
 #merge clusters
 def mergeClusters(Cp):
      
-     Buffer = {}
+     Buffer = {}     
      
-     
-     for idx, val in enumerate(Cp):
+     print("Merging...")
+     for idx, val in Cp.items():         
          
-         #add first item to buffer by default
-         if not Buffer: #if buffer is empty
+         if not Buffer: #if buffer is empty add first item by default
              Buffer[idx] = val
-          
-         else: #compare last item in the buffer with Cp
+             
+         else: #compare last item in the buffer with Cp             
              if max(Buffer[list(Buffer.keys())[-1]]) <= min(Cp[idx]): #new cluster = new Buffer entry
                  Buffer[(list(Buffer.keys())[-1])+1] = Cp[idx]
              else: #merge last item in the buffer with Cp
                  Buffer[list(Buffer.keys())[-1]] += Cp[idx]
-                 
+                             
      return Buffer
                  
              
-             
-        
+#update dataframe             
+def updateClusters(df, Cp):
+    
+    for idx, val in Cp.items():
+        for index in val:
+            df.set_value(index, 'cluster', idx)
+            
+    return df
      
-# =============================================================================
-#      for i, val in enumerate(keyList):
-#          if max(Cp[val][0]) >= min(Cp[keyList[i+1]][0]):
-#              if max(Cp[keyList[i]]) < min(Cp[keyList[i+1]]): #add the clusters to be merged in a new buffer. Python does not allow deletion of keys in loop
-#                  Buffer[keyList[i]] = keyList[i+1]
-#      
-#      for key, val in sorted(list(Buffer.items()), key = lambda x:x[0].lower(), reverse=True):
-#          Cp[key] = Cp[key]+Cp[val]
-#          Cp.pop(val)
-#      return Cp
-# =============================================================================
-# =============================================================================
-#     # initialize each point with unmarked
-#     df['cluster'] = UNMARKED
-#     
-#     # for each point in database
-#     for index, point in df.iterrows():
-#         if df.loc[index]['cluster'] == UNMARKED:
-#             neighborhood = retrieve_neighbors(index, df, spatial_threshold, temporal_threshold)
-#             
-#             if len(neighborhood) < min_neighbors:
-#                 df.set_value(index, 'cluster', NOISE)
-# 
-#             else: # found a core point
-#                 cluster_label = cluster_label + 1
-#                 df.set_value(index, 'cluster', cluster_label)# assign a label to core point
-# 
-#                 for neig_index in neighborhood: # assign core's label to its neighborhood
-#                     df.set_value(neig_index, 'cluster', cluster_label)
-#                     stack.append(neig_index) # append neighborhood to stack
-#                 
-#                 while len(stack) > 0: # find new neighbors from core point neighborhood
-#                     current_point_index = stack.pop()
-#                     new_neighborhood = retrieve_neighbors(current_point_index, df, spatial_threshold, temporal_threshold)
-#                     
-#                     if len(new_neighborhood) >= min_neighbors: # current_point is a new core
-#                         for neig_index in new_neighborhood:
-#                             neig_cluster = df.loc[neig_index]['cluster']
-#                             if (neig_cluster != NOISE) & (neig_cluster == UNMARKED): 
-#                                 # TODO: verify cluster average before add new point
-#                                 df.set_value(neig_index, 'cluster', cluster_label)
-#                                 stack.append(neig_index)
-#     return df
-# 
-# 
-# def retrieve_neighbors(index_center, df, spatial_threshold, temporal_threshold):
-#     neigborhood = []
-# 
-#     center_point = df.loc[index_center]
-# 
-#     # filter by time 
-#     min_time = center_point['date_time'] - timedelta(minutes = temporal_threshold)
-#     max_time = center_point['date_time'] + timedelta(minutes = temporal_threshold)
-#     df = df[(df['date_time'] >= min_time) & (df['date_time'] <= max_time)]
-# 
-#     # filter by distance
-#     for index, point in df.iterrows():
-#         if index != index_center:
-#             distance = great_circle((center_point['latitude'], center_point['longitude']), (point['latitude'], point['longitude'])).meters
-#             if distance <= spatial_threshold:
-#                 neigborhood.append(index)
-# 
-#     return neigborhood
-# =============================================================================
