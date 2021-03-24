@@ -9,7 +9,7 @@ from geopy.distance import great_circle
 INPUTS:
     df={o1,o2,...,on} Set of objects
     CEps = Outer radius for density calculation
-    Eps = Inner radius defining the density calculation are
+    Eps = Inner radius defining the density calculation 
     MinPts = Minimun number of points in neighborhood
 OUTPUT:
     df = Updated dataframe with annotated clusters
